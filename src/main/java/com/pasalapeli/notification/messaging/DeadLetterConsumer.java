@@ -6,7 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 import software.amazon.awssdk.services.sqs.model.Message;
 import software.amazon.awssdk.services.sqs.model.ReceiveMessageRequest;
 
@@ -25,7 +25,7 @@ public class DeadLetterConsumer {
     private static final int MAX_RECEIVE_COUNT_PRINCIPAL = 3;
 
     private final MensajeFallidoService mensajeFallidoService;
-    private final SqsClient sqsClient;
+    private final SqsAsyncClient sqsClient;
 
     @Value("${app.sqs.dlq-url:}")
     private String dlqUrl;
@@ -44,14 +44,17 @@ public class DeadLetterConsumer {
                     .maxNumberOfMessages(10)
                     .waitTimeSeconds(10)
                     .build();
-            for (Message mensaje : sqsClient.receiveMessage(request).messages()) {
+            for (Message mensaje : sqsClient.receiveMessage(request).get().messages()) {
                 String payload = mensaje.body();
                 String error = "Derivado a DLQ tras " + MAX_RECEIVE_COUNT_PRINCIPAL
                         + " intentos fallidos en la cola principal (redrive SQS)";
                 log.error("Mensaje en DLQ [{}]: {} byte(s)", dlqName, payload == null ? 0 : payload.length());
                 mensajeFallidoService.registrar(dlqName, payload, error, MAX_RECEIVE_COUNT_PRINCIPAL);
-                sqsClient.deleteMessage(d -> d.queueUrl(dlqUrl).receiptHandle(mensaje.receiptHandle()));
+                sqsClient.deleteMessage(d -> d.queueUrl(dlqUrl).receiptHandle(mensaje.receiptHandle())).get();
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Ciclo de DLQ interrumpido: {}", e.getMessage());
         } catch (Exception e) {
             // No tumbar el ciclo: se reintenta en el proximo scheduled
             log.warn("No se pudo consultar la DLQ en este ciclo: {}", e.getMessage());
