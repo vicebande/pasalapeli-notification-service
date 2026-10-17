@@ -1,0 +1,61 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: notification-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/pasalapeli_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQLDialect
+  # ============================================================
+  # Mensajeria asincrona (RabbitMQ en EC2-APPS)
+  # ============================================================
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:pasalapeli}
+    password: ${SPRING_RABBITMQ_PASSWORD:pasalapeli123}
+    listener:
+      simple:
+        # Tras agotar los reintentos, el mensaje se rechaza y RabbitMQ lo
+        # enruta automaticamente a la Dead-Letter Queue (x-dead-letter-exchange).
+        acknowledge-mode: auto
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          initial-interval: 1000
+          multiplier: 2.0
+          max-attempts: 3
+          max-interval: 10000
+
+# ============================================================
+# Topologia de mensajeria (configuracion centralizada / declarativa)
+# ============================================================
+notificaciones:
+  exchange: ${NOTIF_EXCHANGE:pasalapeli.events}
+  queue: ${NOTIF_QUEUE:pasalapeli.notificaciones.queue}
+  dlx: ${NOTIF_DLX:pasalapeli.dlx}
+  dlq: ${NOTIF_DLQ:pasalapeli.notificaciones.dlq}
+  dlq-routing-key: ${NOTIF_DLQ_RK:pasalapeli.notificaciones.dlq}
+
+# Actuator - healthcheck para Docker
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always

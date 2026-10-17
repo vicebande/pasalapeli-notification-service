@@ -1,0 +1,60 @@
+name: Deploy notification-service a EC2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Build y deploy a EC2
+    runs-on: ubuntu-latest
+    steps:
+      - name: Desplegar notification-service via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+            COMPOSE_DIR=/opt/pasalapeli/pasalapeli-database
+            SERVICE=notification-service
+
+            # Lock compartido entre los deploys que corren sobre EC2-APPS:
+            # serializa docker compose up para evitar conflictos de contenedor.
+            LOCKFILE=/tmp/pasalapeli-deploy.lock
+            exec 9>"$LOCKFILE"
+            flock -x -w 1800 9
+            echo "==> Lock adquirido $LOCKFILE (despliegue "$SERVICE")"
+
+            echo "==> Pulling latest code"
+            REPO_DIR=/opt/pasalapeli/pasalapeli-notification-service
+            if [ ! -d "$REPO_DIR/.git" ]; then
+              # Primera vez: el repo nunca se clono en EC2-APPS (bootstrap no existia todavia).
+              git clone https://github.com/vicebande/pasalapeli-notification-service.git "$REPO_DIR"
+            fi
+            cd "$REPO_DIR"
+            git pull --ff-only origin main
+
+            echo "==> Building and restarting $SERVICE"
+            cd "$COMPOSE_DIR"
+            docker compose up -d --build "$SERVICE"
+
+            echo "==> Waiting for health check..."
+            for i in $(seq 1 40); do
+              STATUS=$(docker inspect --format '{{.State.Health.Status}}' pasalapeli-notification 2>/dev/null || echo "starting")
+              echo "    [$i/40] Status: $STATUS"
+              if [ "$STATUS" = "healthy" ]; then
+                echo "==> notification-service HEALTHY"
+                break
+              fi
+              sleep 5
+            done
+            if [ "$STATUS" != "healthy" ]; then
+              echo "ERROR: $SERVICE no quedo healthy tras 200s" >&2
+              exit 1
+            fi
+            docker compose ps "$SERVICE"
+            flock -u 9
