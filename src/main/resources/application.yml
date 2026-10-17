@@ -19,36 +19,42 @@ spring:
       hibernate:
         format_sql: true
         dialect: org.hibernate.dialect.MySQLDialect
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AZURE_AD_ISSUER_URI:https://login.microsoftonline.com/common/v2.0}
+          jwk-set-uri: ${AZURE_AD_JWK_SET_URI:https://login.microsoftonline.com/common/discovery/v2.0/keys}
   # ============================================================
-  # Mensajeria asincrona (RabbitMQ en EC2-APPS)
+  # Mensajeria asincrona (AWS SQS): consume eventos de notificacion.
+  # La topologia (topic, colas, DLQ, filter policy) la crea
+  # scripts/setup-messaging.sh (idempotente, sin recursos IAM).
   # ============================================================
-  rabbitmq:
-    host: ${SPRING_RABBITMQ_HOST:localhost}
-    port: ${SPRING_RABBITMQ_PORT:5672}
-    username: ${SPRING_RABBITMQ_USERNAME:pasalapeli}
-    password: ${SPRING_RABBITMQ_PASSWORD:pasalapeli123}
-    listener:
-      simple:
-        # Tras agotar los reintentos, el mensaje se rechaza y RabbitMQ lo
-        # enruta automaticamente a la Dead-Letter Queue (x-dead-letter-exchange).
-        acknowledge-mode: auto
-        default-requeue-rejected: false
-        retry:
-          enabled: true
-          initial-interval: 1000
-          multiplier: 2.0
-          max-attempts: 3
-          max-interval: 10000
+  cloud:
+    aws:
+      region:
+        static: ${AWS_REGION:us-east-1}
+      credentials:
+        use-default-aws-credentials-chain: true
 
-# ============================================================
-# Topologia de mensajeria (configuracion centralizada / declarativa)
-# ============================================================
-notificaciones:
-  exchange: ${NOTIF_EXCHANGE:pasalapeli.events}
-  queue: ${NOTIF_QUEUE:pasalapeli.notificaciones.queue}
-  dlx: ${NOTIF_DLX:pasalapeli.dlx}
-  dlq: ${NOTIF_DLQ:pasalapeli.notificaciones.dlq}
-  dlq-routing-key: ${NOTIF_DLQ_RK:pasalapeli.notificaciones.dlq}
+app:
+  sqs:
+    queue-url: ${SQS_QUEUE_URL:pasalapeli-notificaciones}
+    dlq-url: ${SQS_DLQ_URL:}
+    dlq-name: ${SQS_DLQ_NAME:pasalapeli-notificaciones-dlq}
+
+# Seguridad (defensa en profundidad; el BFF valida en el borde)
+azure:
+  activedirectory:
+    enabled: ${AZURE_AUTH_ENABLED:false}
+    client-id: ${AZURE_CLIENT_ID:00000000-0000-0000-0000-000000000000}
+    tenant-id: ${AZURE_TENANT_ID:common}
+    app-id-uri: ${AZURE_APP_ID_URI:api://00000000-0000-0000-0000-000000000000}
+
+# CORS configurable (en produccion usar el dominio real, nunca *)
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
 
 # Actuator - healthcheck para Docker
 management:

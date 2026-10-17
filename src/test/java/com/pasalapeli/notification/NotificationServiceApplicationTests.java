@@ -4,11 +4,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 /**
- * Prueba de integracion base. Se desactivan los listeners de RabbitMQ para que
- * el contexto levante sin requerir un broker disponible en el entorno de tests.
+ * Prueba de integracion base. Se desactiva el listener de SQS para que
+ * el contexto levante sin requerir AWS disponible en el entorno de tests.
  */
 @SpringBootTest(properties = {
-        "spring.rabbitmq.listener.simple.auto-startup=false"
+        "spring.cloud.aws.sqs.listener.auto-startup=false"
 })
 class NotificationServiceApplicationTests {
 

@@ -2,6 +2,7 @@ package com.pasalapeli.notification.service;
 
 import com.pasalapeli.notification.dto.EventoNotificacionDTO;
 import com.pasalapeli.notification.dto.NotificacionDTO;
+import com.pasalapeli.notification.dto.PageResponseDTO;
 import com.pasalapeli.notification.entity.DestinoNotificacion;
 import com.pasalapeli.notification.entity.Notificacion;
 import com.pasalapeli.notification.entity.ReglaDistribucion;
@@ -14,8 +15,13 @@ import com.pasalapeli.notification.repository.ReglaDistribucionRepository;
 import com.pasalapeli.notification.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
@@ -39,10 +45,35 @@ public class NotificacionService {
 
     // ============================ Consulta (usuario) ============================
 
+    /**
+     * Verifica que el usuario autenticado (correo/principal) pueda operar sobre el buzon
+     * de usuarioId, o que sea ADMIN. Lanza 401/403/404 segun corresponda.
+     */
+    public void verificarAccesoAUsuario(Authentication authentication, Long usuarioId) {
+        if (authentication == null || authentication.getName() == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Autenticacion requerida");
+        }
+        boolean esAdmin = authentication.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+        if (esAdmin) {
+            return;
+        }
+        Usuario usuario = usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado: " + usuarioId));
+        if (!authentication.getName().equalsIgnoreCase(usuario.getCorreo())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No tiene permiso para acceder al buzon de este usuario");
+        }
+    }
+
     @Transactional(readOnly = true)
-    public List<NotificacionDTO> listarPorUsuario(Long usuarioId) {
-        return notificacionRepository.findByUsuarioIdOrderByFechaCreacionDesc(usuarioId)
-                .stream().map(this::toDto).collect(Collectors.toList());
+    public PageResponseDTO<NotificacionDTO> listarPorUsuario(Long usuarioId, int page, int size) {
+        int pageNum = Math.max(page, 0);
+        int sizeNum = Math.min(Math.max(size, 1), 100);
+        Page<Notificacion> pagina = notificacionRepository
+                .findByUsuarioIdOrderByFechaCreacionDesc(usuarioId, PageRequest.of(pageNum, sizeNum));
+        List<NotificacionDTO> contenido = pagina.getContent().stream().map(this::toDto).collect(Collectors.toList());
+        return new PageResponseDTO<>(contenido, pagina.getNumber(), pagina.getSize(),
+                pagina.getTotalElements(), pagina.getTotalPages());
     }
 
     @Transactional(readOnly = true)
@@ -60,20 +91,18 @@ public class NotificacionService {
 
     @Transactional
     public int marcarTodasLeidas(Long usuarioId) {
-        List<Notificacion> pendientes = notificacionRepository
-                .findByUsuarioIdOrderByFechaCreacionDesc(usuarioId)
-                .stream().filter(n -> !n.isLeida()).collect(Collectors.toList());
-        pendientes.forEach(n -> n.setLeida(true));
-        notificacionRepository.saveAll(pendientes);
-        return pendientes.size();
+        // Un solo UPDATE en BD: sin cargar la bandeja completa a memoria
+        return notificacionRepository.marcarTodasLeidasPorUsuario(usuarioId);
     }
 
     // ======================== Procesamiento asincrono ==========================
 
     /**
-     * Procesa un evento proveniente de RabbitMQ: resuelve los destinatarios
-     * (reglas de distribucion) y persiste una notificacion INDEPENDIENTE por
-     * usuario. Lanza excepcion si el evento es invalido para derivarlo a la DLQ.
+     * Procesa un evento proveniente de la mensajeria (SQS en produccion): resuelve los
+     * destinatarios (reglas de distribucion) y persiste una notificacion INDEPENDIENTE
+     * por usuario. Deduplica por (usuario, tipo, referencia): SQS entrega al-menos-una-vez
+     * y el reintentario puede reprocesar el mismo evento. Lanza excepcion si el evento es
+     * invalido para derivarlo a la DLQ.
      */
     @Transactional
     public void procesarEvento(EventoNotificacionDTO evento) {
@@ -89,6 +118,7 @@ public class NotificacionService {
 
         ContenidoNotificacion contenido = construirContenido(evento);
         List<Notificacion> nuevas = destinatarios.stream()
+                .filter(usuarioId -> !yaNotificado(usuarioId, evento.getTipo(), contenido.referencia()))
                 .map(usuarioId -> Notificacion.builder()
                         .usuarioId(usuarioId)
                         .tipo(evento.getTipo())
@@ -100,8 +130,24 @@ public class NotificacionService {
                         .build())
                 .collect(Collectors.toList());
 
+        if (nuevas.isEmpty()) {
+            log.info("Evento {} ya notificado a todos los destinatarios; deduplicado (reentrega SQS)", evento.getTipo());
+            return;
+        }
         notificacionRepository.saveAll(nuevas);
         log.info("Evento {} procesado: {} notificacion(es) generada(s)", evento.getTipo(), nuevas.size());
+    }
+
+    private boolean yaNotificado(Long usuarioId, String tipo, String referencia) {
+        // Sin referencia no hay forma de deduplicar (podria ser un evento distinto)
+        if (referencia == null) {
+            return false;
+        }
+        boolean existe = notificacionRepository.existsByUsuarioIdAndTipoAndReferencia(usuarioId, tipo, referencia);
+        if (existe) {
+            log.info("Notificacion duplicada omitida: usuario {}, tipo {}, referencia {}", usuarioId, tipo, referencia);
+        }
+        return existe;
     }
 
     private Set<Long> resolverDestinatarios(EventoNotificacionDTO evento) {
@@ -153,7 +199,7 @@ public class NotificacionService {
     }
 
     private List<Long> todosLosUsuarios() {
-        return usuarioRepository.findAll().stream().map(Usuario::getId).collect(Collectors.toList());
+        return usuarioRepository.findAllIds();
     }
 
     private ContenidoNotificacion construirContenido(EventoNotificacionDTO evento) {

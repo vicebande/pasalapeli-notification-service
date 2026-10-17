@@ -24,6 +24,7 @@ import java.util.stream.Collectors;
 public class DestinoService {
 
     private static final Set<String> TIPOS_VALIDOS = Set.of("TODOS", "ROL", "USUARIO", "USUARIO_EVENTO");
+    private static final Set<String> ROLES_VALIDOS = Set.of("ADMIN", "CLIENTE");
 
     private final DestinoNotificacionRepository destinoRepository;
     private final ReglaDistribucionRepository reglaRepository;
@@ -37,6 +38,7 @@ public class DestinoService {
     public DestinoDTO crear(DestinoRequestDTO request) {
         String nombre = request.getNombre() == null ? "" : request.getNombre().trim();
         String tipo = request.getTipo() == null ? "" : request.getTipo().trim().toUpperCase();
+        String valor = request.getValor();
 
         if (nombre.isBlank()) {
             throw new BusinessException("El nombre del destino es obligatorio");
@@ -45,8 +47,15 @@ public class DestinoService {
             throw new BusinessException("Tipo de destino invalido. Valores permitidos: " + TIPOS_VALIDOS);
         }
         if (("ROL".equals(tipo) || "USUARIO".equals(tipo))
-                && (request.getValor() == null || request.getValor().isBlank())) {
+                && (valor == null || valor.isBlank())) {
             throw new BusinessException("El valor es obligatorio para destinos de tipo " + tipo);
+        }
+        if ("ROL".equals(tipo)) {
+            // Normaliza a mayusculas y valida contra los roles reales del sistema
+            valor = valor.trim().toUpperCase();
+            if (!ROLES_VALIDOS.contains(valor)) {
+                throw new BusinessException("Rol de destino invalido. Valores permitidos: " + ROLES_VALIDOS);
+            }
         }
         if (destinoRepository.existsByNombreIgnoreCase(nombre)) {
             throw new BusinessException("Ya existe un destino con el nombre '" + nombre + "'");
@@ -55,7 +64,7 @@ public class DestinoService {
         DestinoNotificacion destino = DestinoNotificacion.builder()
                 .nombre(nombre)
                 .tipo(tipo)
-                .valor(request.getValor())
+                .valor(valor)
                 .descripcion(request.getDescripcion())
                 .activo(request.getActivo() == null || request.getActivo())
                 .fechaCreacion(LocalDateTime.now())

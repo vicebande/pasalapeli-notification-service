@@ -3,77 +3,58 @@ package com.pasalapeli.notification.messaging;
 import com.pasalapeli.notification.service.MensajeFallidoService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.core.Message;
-import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-
-import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Map;
+import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.Message;
+import software.amazon.awssdk.services.sqs.model.ReceiveMessageRequest;
 
 /**
- * Consumidor de la Dead-Letter Queue. Registra el mensaje fallido y su causa
- * para diagnostico de mensajes fallidos y confirma (ack)
- * el mensaje para que no vuelva a reprocesarse indefinidamente.
+ * Poller de la Dead-Letter Queue (cada 60 s). SQS no ofrece un listener
+ * push para DLQs sin subscribir, asi que se consulta la DLQ, se persiste
+ * cada mensaje como MensajeFallido (misma API admin de diagnostico) y se
+ * elimina de la cola para no reprocesarlo indefinidamente.
  */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class DeadLetterConsumer {
 
+    /** maxReceiveCount configurado en la cola principal (setup-messaging.sh). */
+    private static final int MAX_RECEIVE_COUNT_PRINCIPAL = 3;
+
     private final MensajeFallidoService mensajeFallidoService;
+    private final SqsClient sqsClient;
 
-    // containerFactory dlqListenerFactory: sin conversor JSON, para recibir el
-    // payload crudo (aunque sea invalido) y registrarlo tal cual para diagnostico.
-    @RabbitListener(queues = "${notificaciones.dlq:pasalapeli.notificaciones.dlq}",
-            containerFactory = "dlqListenerFactory")
-    public void onDeadLetter(Message message) {
-        String payload = new String(message.getBody(), StandardCharsets.UTF_8);
-        Map<String, Object> headers = message.getMessageProperties().getHeaders();
+    @Value("${app.sqs.dlq-url:}")
+    private String dlqUrl;
 
-        String error = extraerError(headers);
-        int intentos = extraerIntentos(headers);
-        String cola = extraerColaOrigen(headers, message);
+    @Value("${app.sqs.dlq-name:pasalapeli-notificaciones-dlq}")
+    private String dlqName;
 
-        log.error("Mensaje derivado a DLQ [cola={}] tras {} intento(s). Causa: {}", cola, intentos, error);
-        mensajeFallidoService.registrar(cola, payload, error, intentos);
-    }
-
-    private String extraerError(Map<String, Object> headers) {
-        if (headers.get("x-exception-message") != null) {
-            return String.valueOf(headers.get("x-exception-message"));
+    @Scheduled(fixedDelay = 60_000, initialDelay = 30_000)
+    public void vaciarDlq() {
+        if (dlqUrl == null || dlqUrl.isBlank()) {
+            return;
         }
-        if (headers.get("x-first-death-reason") != null) {
-            return String.valueOf(headers.get("x-first-death-reason"));
-        }
-        return "Causa desconocida";
-    }
-
-    @SuppressWarnings("unchecked")
-    private int extraerIntentos(Map<String, Object> headers) {
-        Object xDeath = headers.get("x-death");
-        if (xDeath instanceof List<?> lista && !lista.isEmpty() && lista.get(0) instanceof Map<?, ?> first) {
-            Object count = ((Map<String, Object>) first).get("count");
-            if (count != null) {
-                try {
-                    return Integer.parseInt(String.valueOf(count));
-                } catch (NumberFormatException ignored) {
-                    // se ignora y se usa el valor por defecto
-                }
+        try {
+            ReceiveMessageRequest request = ReceiveMessageRequest.builder()
+                    .queueUrl(dlqUrl)
+                    .maxNumberOfMessages(10)
+                    .waitTimeSeconds(10)
+                    .build();
+            for (Message mensaje : sqsClient.receiveMessage(request).messages()) {
+                String payload = mensaje.body();
+                String error = "Derivado a DLQ tras " + MAX_RECEIVE_COUNT_PRINCIPAL
+                        + " intentos fallidos en la cola principal (redrive SQS)";
+                log.error("Mensaje en DLQ [{}]: {} byte(s)", dlqName, payload == null ? 0 : payload.length());
+                mensajeFallidoService.registrar(dlqName, payload, error, MAX_RECEIVE_COUNT_PRINCIPAL);
+                sqsClient.deleteMessage(d -> d.queueUrl(dlqUrl).receiptHandle(mensaje.receiptHandle()));
             }
+        } catch (Exception e) {
+            // No tumbar el ciclo: se reintenta en el proximo scheduled
+            log.warn("No se pudo consultar la DLQ en este ciclo: {}", e.getMessage());
         }
-        return 1;
-    }
-
-    @SuppressWarnings("unchecked")
-    private String extraerColaOrigen(Map<String, Object> headers, Message message) {
-        Object xDeath = headers.get("x-death");
-        if (xDeath instanceof List<?> lista && !lista.isEmpty() && lista.get(0) instanceof Map<?, ?> first) {
-            Object queue = ((Map<String, Object>) first).get("queue");
-            if (queue != null) {
-                return String.valueOf(queue);
-            }
-        }
-        return message.getMessageProperties().getConsumerQueue();
     }
 }

@@ -10,10 +10,15 @@ import java.time.LocalDateTime;
  * (fan-out): un evento de difusion genera una fila por destinatario.
  */
 @Entity
-@Table(name = "Notificacion", indexes = {
-        @Index(name = "idx_notificacion_usuario", columnList = "usuario_id"),
-        @Index(name = "idx_notificacion_usuario_leida", columnList = "usuario_id,leida")
-})
+@Table(name = "Notificacion",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uq_notificacion_usuario_tipo_referencia",
+                        columnNames = {"usuario_id", "tipo", "referencia"})
+        },
+        indexes = {
+                @Index(name = "idx_notificacion_usuario", columnList = "usuario_id"),
+                @Index(name = "idx_notificacion_usuario_leida", columnList = "usuario_id,leida")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

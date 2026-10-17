@@ -25,11 +25,9 @@ public class MensajeFallido {
     @Column(nullable = false, length = 120)
     private String cola;
 
-    @Lob
     @Column(columnDefinition = "TEXT")
     private String payload;
 
-    @Lob
     @Column(columnDefinition = "TEXT")
     private String error;
 
