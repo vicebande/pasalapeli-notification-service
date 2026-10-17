@@ -10,7 +10,7 @@ import lombok.*;
 @AllArgsConstructor
 public class ReglaRequestDTO {
 
-    /** PELICULA_CREADA | TICKET_PAGADO | TICKET_DEVUELTO */
+    /** PELICULA_CREADA | PELICULA_ELIMINADA | TICKET_PAGADO | TICKET_DEVUELTO */
     @NotBlank(message = "El evento es obligatorio")
     private String evento;
 

@@ -25,7 +25,7 @@ public class ReglaDistribucion {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** Evento de origen: PELICULA_CREADA, TICKET_PAGADO, TICKET_DEVUELTO. */
+    /** Evento de origen: PELICULA_CREADA, PELICULA_ELIMINADA, TICKET_PAGADO, TICKET_DEVUELTO. */
     @Column(nullable = false, length = 50)
     private String evento;
 

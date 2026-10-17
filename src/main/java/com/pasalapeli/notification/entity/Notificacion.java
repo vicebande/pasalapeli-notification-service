@@ -33,7 +33,7 @@ public class Notificacion {
     @Column(name = "usuario_id", nullable = false)
     private Long usuarioId;
 
-    /** Tipo de evento de origen: PELICULA_CREADA, TICKET_PAGADO, TICKET_DEVUELTO. */
+    /** Tipo de evento de origen: PELICULA_CREADA, PELICULA_ELIMINADA, TICKET_PAGADO, TICKET_DEVUELTO. */
     @Column(nullable = false, length = 40)
     private String tipo;
 

@@ -35,6 +35,7 @@ import java.util.stream.Collectors;
 public class NotificacionService {
 
     public static final String TIPO_PELICULA_CREADA = "PELICULA_CREADA";
+    public static final String TIPO_PELICULA_ELIMINADA = "PELICULA_ELIMINADA";
     public static final String TIPO_TICKET_PAGADO = "TICKET_PAGADO";
     public static final String TIPO_TICKET_DEVUELTO = "TICKET_DEVUELTO";
 
@@ -211,6 +212,10 @@ public class NotificacionService {
             case TIPO_PELICULA_CREADA -> new ContenidoNotificacion(
                     "Nueva pelicula en cartelera",
                     "Se agrego '" + pelicula + "' a la cartelera. Ya puedes comprar tus entradas.",
+                    evento.getPeliculaId() != null ? String.valueOf(evento.getPeliculaId()) : pelicula);
+            case TIPO_PELICULA_ELIMINADA -> new ContenidoNotificacion(
+                    "Pelicula no disponible",
+                    "La pelicula '" + pelicula + "' ya no esta disponible en el catalogo.",
                     evento.getPeliculaId() != null ? String.valueOf(evento.getPeliculaId()) : pelicula);
             case TIPO_TICKET_PAGADO -> new ContenidoNotificacion(
                     "Compra confirmada",
