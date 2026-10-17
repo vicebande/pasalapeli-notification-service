@@ -52,7 +52,8 @@ jobs:
               git clone https://github.com/vicebande/pasalapeli-notification-service.git "$REPO_DIR"
             fi
             cd "$REPO_DIR"
-            git pull --ff-only origin main
+            git fetch --prune origin
+            git reset --hard origin/main
 
             echo "==> Building and restarting $SERVICE"
             cd "$COMPOSE_DIR"
