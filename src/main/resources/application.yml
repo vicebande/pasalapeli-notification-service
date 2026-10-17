@@ -37,11 +37,15 @@ spring:
       credentials:
         use-default-aws-credentials-chain: true
 
+# Configuracion de la app (clave unica: YAML no permite claves duplicadas)
 app:
   sqs:
     queue-url: ${SQS_QUEUE_URL:pasalapeli-notificaciones}
     dlq-url: ${SQS_DLQ_URL:}
     dlq-name: ${SQS_DLQ_NAME:pasalapeli-notificaciones-dlq}
+  # CORS configurable (en produccion usar el dominio real, nunca *)
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
 
 # Seguridad (defensa en profundidad; el BFF valida en el borde)
 azure:
@@ -50,11 +54,6 @@ azure:
     client-id: ${AZURE_CLIENT_ID:00000000-0000-0000-0000-000000000000}
     tenant-id: ${AZURE_TENANT_ID:common}
     app-id-uri: ${AZURE_APP_ID_URI:api://00000000-0000-0000-0000-000000000000}
-
-# CORS configurable (en produccion usar el dominio real, nunca *)
-app:
-  cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
 
 # Actuator - healthcheck para Docker
 management:
