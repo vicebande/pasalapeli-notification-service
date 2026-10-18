@@ -20,6 +20,7 @@ import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+import jakarta.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.util.Map;
 
@@ -61,6 +62,14 @@ public class SecurityConfig {
 
     @Value("${app.cors.allowed-origins:*}")
     private String corsAllowedOrigins;
+
+    @PostConstruct
+    void warnIfDemoMode() {
+        if (!azureEnabled) {
+            log.warn("AZURE_AUTH_ENABLED=false: MODO DEMO ACTIVO — las cabeceras X-Dev-User-* son confiables. "
+                    + "NO usar en produccion; establecer AZURE_AUTH_ENABLED=true.");
+        }
+    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
