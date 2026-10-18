@@ -1,5 +1,6 @@
 package com.pasalapeli.notification.controller;
 
+import com.pasalapeli.notification.dto.AnuncioRequestDTO;
 import com.pasalapeli.notification.dto.DestinoDTO;
 import com.pasalapeli.notification.dto.DestinoRequestDTO;
 import com.pasalapeli.notification.dto.MensajeFallidoDTO;
@@ -7,6 +8,7 @@ import com.pasalapeli.notification.dto.ReglaDTO;
 import com.pasalapeli.notification.dto.ReglaRequestDTO;
 import com.pasalapeli.notification.service.DestinoService;
 import com.pasalapeli.notification.service.MensajeFallidoService;
+import com.pasalapeli.notification.service.NotificacionService;
 import com.pasalapeli.notification.service.ReglaService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * API de administracion de la mensajeria: destinos, reglas de distribucion y
@@ -31,6 +34,21 @@ public class AdminNotificacionController {
     private final DestinoService destinoService;
     private final ReglaService reglaService;
     private final MensajeFallidoService mensajeFallidoService;
+    private final NotificacionService notificacionService;
+
+    // ------------------------------ Anuncios ------------------------------
+
+    /**
+     * Anuncio manual del administrador: notificacion tipo ANUNCIO a los
+     * destinatarios (regla ANUNCIO si existe; si no, a todos los usuarios).
+     */
+    @PostMapping("/anuncios")
+    public ResponseEntity<Map<String, Object>> crearAnuncio(@Valid @RequestBody AnuncioRequestDTO request) {
+        int enviados = notificacionService.crearAnuncio(request.getTitulo().trim(), request.getMensaje().trim());
+        log.info("Anuncio '{}' enviado a {} usuario(s)", request.getTitulo(), enviados);
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("enviados", enviados));
+    }
+
 
     // ------------------------------ Destinos ------------------------------
 

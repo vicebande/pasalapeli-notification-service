@@ -38,6 +38,7 @@ public class NotificacionService {
     public static final String TIPO_PELICULA_ELIMINADA = "PELICULA_ELIMINADA";
     public static final String TIPO_TICKET_PAGADO = "TICKET_PAGADO";
     public static final String TIPO_TICKET_DEVUELTO = "TICKET_DEVUELTO";
+    public static final String TIPO_ANUNCIO = "ANUNCIO";
 
     private final NotificacionRepository notificacionRepository;
     private final ReglaDistribucionRepository reglaRepository;
@@ -137,6 +138,40 @@ public class NotificacionService {
         }
         notificacionRepository.saveAll(nuevas);
         log.info("Evento {} procesado: {} notificacion(es) generada(s)", evento.getTipo(), nuevas.size());
+    }
+
+    /**
+     * Anuncio manual del administrador: crea una notificacion tipo ANUNCIO por
+     * destinatario. Usa las mismas reglas de distribucion que los eventos
+     * (si existe una regla para ANUNCIO se respeta; sin reglas van a todos
+     * los usuarios). Sin referencia: cada envio manual es independiente
+     * (no aplica deduplicacion de reentregas).
+     *
+     * @return cantidad de usuarios que recibiran el anuncio
+     */
+    @Transactional
+    public int crearAnuncio(String titulo, String mensaje) {
+        EventoNotificacionDTO evento = EventoNotificacionDTO.builder().tipo(TIPO_ANUNCIO).build();
+        Set<Long> destinatarios = resolverDestinatarios(evento);
+        if (destinatarios.isEmpty()) {
+            log.warn("Anuncio sin destinatarios (ningun usuario registrado); no se genera nada");
+            return 0;
+        }
+        LocalDateTime ahora = LocalDateTime.now();
+        List<Notificacion> nuevas = destinatarios.stream()
+                .map(usuarioId -> Notificacion.builder()
+                        .usuarioId(usuarioId)
+                        .tipo(TIPO_ANUNCIO)
+                        .titulo(titulo)
+                        .mensaje(mensaje)
+                        .referencia(null)
+                        .leida(false)
+                        .fechaCreacion(ahora)
+                        .build())
+                .collect(Collectors.toList());
+        notificacionRepository.saveAll(nuevas);
+        log.info("Anuncio manual enviado a {} usuario(s)", nuevas.size());
+        return nuevas.size();
     }
 
     private boolean yaNotificado(Long usuarioId, String tipo, String referencia) {

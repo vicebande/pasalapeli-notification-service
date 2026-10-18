@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 public class ReglaService {
 
     private static final Set<String> EVENTOS_VALIDOS = Set.of(
-            "PELICULA_CREADA", "PELICULA_ELIMINADA", "TICKET_PAGADO", "TICKET_DEVUELTO");
+            "PELICULA_CREADA", "PELICULA_ELIMINADA", "TICKET_PAGADO", "TICKET_DEVUELTO", "ANUNCIO");
 
     private final ReglaDistribucionRepository reglaRepository;
     private final DestinoNotificacionRepository destinoRepository;
