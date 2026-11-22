@@ -21,49 +21,59 @@ jobs:
         with:
           args: -Dsonar.qualitygate.wait=true
 
-  terraform:
-    name: Terraform Infrastructure
+  deploy:
+    name: Deploy notification-service to EKS
     needs: quality
     runs-on: ubuntu-latest
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-      TF_VAR_environment_name: dev
-      TF_VAR_domain_name: pasalapeli-notification-service
+      AWS_REGION: us-east-1
+      CLUSTER_NAME: pasalapeli-cluster
+      ECR_IMAGE: 439738332704.dkr.ecr.us-east-1.amazonaws.com/pasalapeli-images/notification-service:latest
+      DEPLOYMENT_NAME: pasalapeli-notification-service
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          terraform_version: 1.6.0
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
 
-      - name: Terraform Format
-        run: terraform fmt -check -recursive
-        working-directory: terraform
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Terraform Init
-        run: terraform init -backend=true -backend-config="bucket=pasalapeli-tfstate" -backend-config="key=pasalapeli-notification-service/terraform.tfstate" -backend-config="region=us-east-1" -input=false
-        working-directory: terraform
+      - name: Build and push Docker image
+        run: |
+          docker build -t $ECR_IMAGE .
+          docker push $ECR_IMAGE
 
-      - name: Terraform Validate
-        run: terraform validate
-        working-directory: terraform
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
 
-      - name: Terraform Plan
-        run: terraform plan -no-color
-        working-directory: terraform
-
-      - name: Terraform Apply
-        if: github.ref == 'refs/heads/main'
-        run: terraform apply -auto-approve
-        working-directory: terraform
+      - name: Create K8s secrets (idempotent)
+        run: |
+          kubectl create secret generic pasalapeli-db-secret \
+            --from-literal=SPRING_DATASOURCE_URL="${{ secrets.SPRING_DATASOURCE_URL }}" \
+            --from-literal=SPRING_DATASOURCE_USERNAME="${{ secrets.SPRING_DATASOURCE_USERNAME }}" \
+            --from-literal=SPRING_DATASOURCE_PASSWORD="${{ secrets.SPRING_DATASOURCE_PASSWORD }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret generic pasalapeli-aws-secret \
+            --from-literal=AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
+            --from-literal=AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
+            --from-literal=AWS_SESSION_TOKEN="${{ secrets.AWS_SESSION_TOKEN }}" \
+            --from-literal=AWS_REGION=us-east-1 \
+            --from-literal=AWS_DEFAULT_REGION=us-east-1 \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret generic pasalapeli-internal-token-secret \
+            --from-literal=INTERNAL_API_TOKEN="${{ secrets.INTERNAL_API_TOKEN }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy to EKS
-        if: success()
         run: |
-          echo "🚀 Deploying notification-service to EKS..."
-          aws eks update-kubeconfig --name pasalapeli-cluster --region us-east-1
           kubectl apply -f k8s-manifests/
+          kubectl rollout restart deployment/$DEPLOYMENT_NAME
+          kubectl rollout status deployment/$DEPLOYMENT_NAME --timeout=180s
