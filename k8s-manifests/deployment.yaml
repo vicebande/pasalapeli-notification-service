@@ -19,8 +19,15 @@ spec:
         - name: notification-service
           image: 439738332704.dkr.ecr.us-east-1.amazonaws.com/pasalapeli-images/notification-service:latest
           ports:
-            - containerPort: 8080
+            - containerPort: 8084
           env:
             - name: ENVIRONMENT
               value: "dev"
+          envFrom:
+            - secretRef:
+                name: pasalapeli-db-secret
+            - secretRef:
+                name: pasalapeli-aws-secret
+            - secretRef:
+                name: pasalapeli-internal-token-secret
           imagePullPolicy: IfNotPresent

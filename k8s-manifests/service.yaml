@@ -10,6 +10,6 @@ spec:
     app: pasalapeli-notification-service
   ports:
     - port: 8080
-      targetPort: 8080
+      targetPort: 8084
       protocol: TCP
   type: ClusterIP
