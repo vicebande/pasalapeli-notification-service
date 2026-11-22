@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: notification-service
-          image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/pasalapeli-images/notification-service:latest
+          image: 439738332704.dkr.ecr.us-east-1.amazonaws.com/pasalapeli-images/notification-service:latest
           ports:
             - containerPort: 8080
           env:
