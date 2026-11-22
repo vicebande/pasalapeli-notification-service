@@ -57,7 +57,7 @@ jobs:
 
             echo "==> Building and restarting $SERVICE"
             cd "$COMPOSE_DIR"
-            docker compose up -d --build "$SERVICE"
+            docker compose -f docker-compose.yml up -d --build "$SERVICE"
 
             echo "==> Waiting for health check..."
             for i in $(seq 1 40); do
@@ -73,5 +73,5 @@ jobs:
               echo "ERROR: $SERVICE no quedo healthy tras 200s" >&2
               exit 1
             fi
-            docker compose ps "$SERVICE"
+            docker compose -f docker-compose.yml ps "$SERVICE"
             flock -u 9
