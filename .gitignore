@@ -20,3 +20,7 @@ Thumbs.db
 ### Entorno ###
 .env
 *.log
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
